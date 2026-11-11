@@ -1,0 +1,16 @@
+[package]
+name = "fishpot"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ratatui = "0.29"
+crossterm = "0.28"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "5.0"
+notify-rust = "4.11"
+rand = "0.8"
+ureq = { version = "2.9", features = ["json"] }
+urlencoding = "2.1"
+toml = "0.8"
