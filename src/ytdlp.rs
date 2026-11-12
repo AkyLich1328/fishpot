@@ -49,9 +49,6 @@ pub fn search(query: &str, n: usize) -> Result<Vec<Track>, String> {
     Ok(tracks)
 }
 
-/// Универсальный парсер прогресса.
-/// Ищет в строке любой токен вида "45.3%" и отправляет его в канал.
-/// Работает с любым форматом yt-dlp: "[download]  45.3% of..." или "download:45.3%".
 fn parse_progress(line: &str, tx: &mpsc::Sender<DownloadEvent>) -> bool {
     for part in line.split_whitespace() {
         if part.ends_with('%') {
@@ -65,8 +62,6 @@ fn parse_progress(line: &str, tx: &mpsc::Sender<DownloadEvent>) -> bool {
     false
 }
 
-/// Запускает yt-dlp и читает stdout/stderr параллельно.
-/// Возвращает финальный путь к скачанному файлу.
 fn run_ytdlp(args: &[&str], tx: &mpsc::Sender<DownloadEvent>) -> Result<String, String> {
     let mut child = Command::new("yt-dlp")
         .args(args)

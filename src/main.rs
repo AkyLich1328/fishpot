@@ -34,8 +34,6 @@ fn main() -> io::Result<()> {
         }
     }
 
-    // enable_raw_mode отключает канонический ввод (Enter), чтобы читать каждое нажатие.
-    // EnterAlternateScreen создает "второй экран" — после выхода вернётся исходный.
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
@@ -45,13 +43,11 @@ fn main() -> io::Result<()> {
     let mut app = app::App::new(initial_files); 
     let result = app.run(&mut terminal);
 
-    // Восстановление терминала обязательно даже при ошибке app.run.
-    // Если этого не сделать, пользователь останется в "сломанном" терминале.
+    // Восстановление терминала
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen, DisableMouseCapture)?;
     terminal.show_cursor()?;
 
-    // Выводим ошибку app.run (если была) уже после восстановления терминала.
     if let Err(e) = result {
         eprintln!("Ошибка приложения: {e}");
         std::process::exit(1);

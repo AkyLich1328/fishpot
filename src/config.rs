@@ -2,8 +2,6 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use ratatui::style::Color;
 
-/// Цветовая схема интерфейса. Все цвета хранятся строками в HEX-формате,
-/// чтобы пользователь мог легко менять их в config.toml без пересборки.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Theme {
     pub bg_color: String,
@@ -14,11 +12,11 @@ pub struct Theme {
     pub selected_bg: String,
     // NEW — прозрачность и ambient
     #[serde(default)]
-    pub transparent_panels: bool,      // Local/Results без фона — просвечивает терминал
+    pub transparent_panels: bool,      
     #[serde(default)]
-    pub transparent_visualizer: bool,  // визуализатор без фона
+    pub transparent_visualizer: bool,  
     #[serde(default = "default_ambient_count")]
-    pub ambient_count: usize,          // сколько частиц ambient-эффекта
+    pub ambient_count: usize,          
 }
 
 fn default_ambient_count() -> usize { 200 }
@@ -32,7 +30,7 @@ pub struct AppConfig {
 }
 
 impl Default for AppConfig {
-    /// Дефолтные настройки при первом запуске. Используется тема Tokyo Night.
+    /// Дефолтные настройки при первом запуске
     fn default() -> Self {
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
         let download_dir = home.join("Music").join("fishpot").to_string_lossy().to_string();
@@ -57,9 +55,6 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
-    /// Загружает конфиг из `~/.config/yt-music-tui/config.toml`.
-    /// Если файла нет — создаёт дефолтный и сразу сохраняет его на диск,
-    /// чтобы пользователь мог его редактировать.
     pub fn load() -> Self {
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
         let config_path = home.join(".config").join("fishpot").join("config.toml");
@@ -91,8 +86,7 @@ impl AppConfig {
     }
 }
 
-/// Преобразует HEX-строку (`#rrggbb`) в `Color::Rgb` для ratatui.
-/// Если строка некорректна — возвращает `Reset` (терминальный цвет по умолчанию).
+/// Преобразует HEX-строку в `Color::Rgb` для ratatui.
 pub fn parse_hex(hex: &str) -> Color {
     let hex = hex.trim_start_matches('#');
     if hex.len() == 6 {

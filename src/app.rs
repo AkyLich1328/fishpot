@@ -4,21 +4,19 @@ use ratatui::{backend::Backend, Terminal};
 use notify_rust::Notification;
 use crate::{mpv::Mpv, ui, ytdlp::{self, Track}, api, config::AppConfig};
 
-/// Частица для ambient-эффекта: летит по экрану, тускнеет со временем.
 #[derive(Clone)]
 pub struct Particle {
-    pub x: f64,       // нормализованная позиция 0.0..1.0
+    pub x: f64,       
     pub y: f64,
-    pub vx: f64,      // скорость в нормализованных единицах за кадр
+    pub vx: f64,      
     pub vy: f64,
-    pub life: f64,    // 1.0 = только родилась, 0.0 = умерла
-    pub decay: f64,   // насколько уменьшается life за кадр
+    pub life: f64,    
+    pub decay: f64,   
     pub ch: char,
     pub phase: f64,
 }
 
 impl Particle {
-    /// Спавн частицы-искры. Вылетает из правой части экрана (от визуализатора) и летит влево.
     pub fn spawn(energy: f64) -> Self {
         let r = || {
             use std::sync::atomic::{AtomicU64, Ordering};
@@ -28,15 +26,12 @@ impl Particle {
             (x >> 11) as f64 / (1u64 << 53) as f64
         };
 
-        // Мелкие точки, как в Брайле
         let chars = ['·', '∙', '⋅', '•', '°', '○', '｡'];
         let ch = chars[(r() * chars.len() as f64) as usize % chars.len()];
 
-        // Стартуем из правой части экрана (где обычно визуализатор)
         let x = 1.0 + r() * 0.1; 
         let y = r();
 
-        // Летят влево
         let vx = -(0.002 + energy * 0.008);
         let vy = (r() - 0.5) * 0.003;
 
@@ -57,7 +52,6 @@ impl Particle {
 #[derive(PartialEq, Clone, Copy, Debug)]
 pub enum RepeatMode { None, All, One }
 
-/// Режим ввода. Влияет на то, что показывается в строке ввода и как обрабатываются клавиши.
 #[derive(PartialEq, Clone, Copy)]
 pub enum Mode { 
     Normal,          // Обычное управление
@@ -198,11 +192,11 @@ impl App {
 
         let mut app = Self {
             mode: Mode::Normal, 
-            focus: start_focus,           // ← Results по умолчанию, Local если передан файл/папка
+            focus: start_focus,           
             input: String::new(),
             results: Vec::new(), selected: 0,
             local_items: Vec::new(), local_selected: 0, 
-            current_dir,                  // ← уже вычисленная (файл / папка / дефолт)
+            current_dir,                  
             current: None, status: "Ready".into(), volume: 100, paused: false, 
             show_help: false, time_pos: 0.0, duration: 0.0,
             mpv, search_rx: None, import_rx: None, download_rx: None,
@@ -316,8 +310,6 @@ impl App {
     }
 
     /// Автоматически переходит к следующему треку (используется при eof и repeat=All).
-    /// Ищет текущий трек по ID, чтобы корректно работало даже если пользователь
-    /// прокрутил список в сторону.
     fn play_next_auto(&mut self) {
         let from_local = self.current.as_ref().map(|t| t.local_path.is_some()).unwrap_or(false);
 
@@ -384,7 +376,6 @@ impl App {
                 self.duration = s.duration; 
                 self.paused = s.paused;
                 
-                // Трек закончился, если mpv прислал eof-reached ИЛИ время подошло к концу (фолбэк).
                 let is_ended = s.eof_reached || (self.duration > 0.0 && self.time_pos >= self.duration - 0.5);
                 
                 if is_ended && !self.last_eof && !self.paused {
@@ -411,8 +402,6 @@ impl App {
                 }
             }
             
-            // Собираем события в Vec, чтобы отпустить borrow self.import_rx
-            // до вызова self.handle_download_event (который требует &mut self).
             let mut pending_import_events = Vec::new();
             if let Some(rx) = &self.import_rx {
                 while let Ok(ev) = rx.try_recv() {
@@ -456,7 +445,6 @@ impl App {
         }
     }
 
-    /// Извлекает общий код обработки событий загрузки. 
     /// `is_import == true` — это плейлист, иначе одиночный трек.
     fn handle_download_event(&mut self, event: crate::ytdlp::DownloadEvent, is_import: bool) {
         match event {
@@ -712,7 +700,7 @@ impl App {
             KeyCode::Char('m') => { self.mode = Mode::CreatingDir; self.input.clear(); }
             KeyCode::Char('r') => { self.shuffle = !self.shuffle; self.status = format!("Shuffle: {}", self.shuffle); }
             KeyCode::Char('V') => { 
-                self.viz_mode = (self.viz_mode + 1) % 8; 
+                self.viz_mode = (self.viz_mode + 1) % 14; 
                 self.status = format!("Визуализация: {}", self.viz_mode); 
             }
 
@@ -835,7 +823,6 @@ impl App {
         self.lyrics_data = None;
         self.lyrics_scroll = None; 
         
-        // Всегда грузим текст асинхронно — пользователь откроет его по L.
         let title = t.title.clone();
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || { 
@@ -847,8 +834,6 @@ impl App {
         Ok(())
     }
 
-    /// Переключает на следующий трек вручную (по клавише n).
-    /// Если включён shuffle — выбирает случайный индекс.
     fn play_next(&mut self) -> io::Result<()> {
         if self.focus == Focus::Results && !self.results.is_empty() {
             let mut idx = if self.shuffle { 
@@ -903,7 +888,7 @@ impl App {
             p.y += p.vy;
             p.phase += 0.02; 
             
-            // Легкое покачивание (волна)
+            // Легкое покачивание 
             p.vy += (p.phase).sin() * 0.0001;
 
             p.life -= p.decay;

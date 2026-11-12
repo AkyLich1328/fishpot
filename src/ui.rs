@@ -27,7 +27,6 @@ fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
     };
     
     // Показываем "⬇ X%" только когда прогресс реально известен.
-    // Если скачивание идёт, но прогресс ещё не пришёл (стрим, неизвестный размер) — "⬇ ..."
     let download_str = match app.download_percent {
         Some(pct) if pct > 0.0 => format!(" ⬇ {:.1}% ", pct),
         Some(_) => " ⬇ ... ".to_string(),
@@ -219,7 +218,7 @@ fn render_results(f: &mut Frame, app: &App, area: Rect) {
     f.render_stateful_widget(List::new(items).block(block), area, &mut state);
 }
 
-/// Правая (или левая) панель локальной библиотеки.
+///панель локальной библиотеки.
 fn render_local(f: &mut Frame, app: &App, area: Rect) {
     let is_active = app.focus == Focus::Local;
     let active_border = parse_hex(&app.config.theme.active_border);
@@ -293,7 +292,6 @@ fn render_confirm_delete(f: &mut Frame, app: &App) {
     );
 }
 
-/// Рендеринг визуализатора. Делегирует работу конкретному режиму.
 fn render_visualizer(f: &mut Frame, app: &App, area: Rect) {
     let active_border = parse_hex(&app.config.theme.active_border);
     let title = match app.viz_mode {
@@ -305,31 +303,29 @@ fn render_visualizer(f: &mut Frame, app: &App, area: Rect) {
         5 => " ДНК ",
         6 => " Аквариум ",
         7 => " Ночной поезд ",
+        8 => " 3D Океан ",
+        9 => " Черная дыра ",
+        10 => " Плазма ",
+        11 => " Спирограф ",
+        12 => " Варп-прыжок ",
+        13 => " Слияние визуализаторов ",
         _ => " Визуализатор ",
     };
     
-    let viz_bg = if app.config.theme.transparent_visualizer {
-        Color::Reset
-    } else {
-        Color::Rgb(10, 10, 15)
-    };
-
     let block = Block::bordered()
         .title(title)
         .title_alignment(ratatui::layout::Alignment::Center)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(active_border))
-        .style(Style::default().bg(viz_bg));
+        .style(Style::default().bg(Color::Rgb(10, 10, 15)));
         
     let inner = block.inner(area);
     f.render_widget(block, area);
     
-    // cava присылает 32 байта — по одному на каждую полосу частот.
     let data = app.audio_data.lock().unwrap();
     let freqs: Vec<f64> = if data.len() == 32 {
         data.iter().map(|&x| x as f64 / 255.0).collect()
     } else {
-        // Синтетическая симуляция, если cava не установлена.
         (0..32).map(|i| {
             let t = app.viz_time;
             let f = i as f64;
@@ -341,26 +337,99 @@ fn render_visualizer(f: &mut Frame, app: &App, area: Rect) {
     let mid: f64 = freqs[8..20].iter().sum::<f64>() / 12.0;
     let treble: f64 = freqs[20..32].iter().sum::<f64>() / 12.0;
 
-    // Режимы, которые рисуют напрямую в Frame (не используют canvas Брайля).
+    // Визуализаторы на основе символов (не Брайля) отрисовываются сразу
     if app.viz_mode == 7 { render_train(f, inner, app.viz_time, bass, mid, treble); return; }
     if app.viz_mode == 6 { render_aquarium(f, inner, app.viz_time, bass, treble); return; }
     if app.viz_mode == 3 { render_matrix_rain(f, inner, app.viz_time, bass, treble); return; }
     if app.viz_mode == 4 { render_skull(f, inner, app.viz_time, bass, treble); return; }
 
-    // Режимы, использующие canvas Брайля: каждая точка — бит в символе Брайля (2x4).
     let w = inner.width as usize * 2; 
     let h = inner.height as usize * 4;
     let mut canvas = vec![(0u8, Color::Reset); w * h];
 
-    match app.viz_mode {
-        0 => draw_sphere(&mut canvas, w, h, app.viz_time, bass, mid, treble),
-        1 => draw_radial(&mut canvas, w, h, app.viz_time, &freqs),
-        2 => draw_tunnel(&mut canvas, w, h, app.viz_time, &freqs, bass),
-        5 => draw_dna(&mut canvas, w, h, app.viz_time, bass, mid, treble),
-        _ => {}
+    // --- ЛОГИКА РЕЖИМА СЛИЯНИЯ ---
+    if app.viz_mode == 13 {
+        let viz_list = [0, 1, 2, 8, 9, 10, 11, 12];
+        let cycle_time = 15.0; 
+        let transition_time = 4.0; // Переход теперь чуть быстрее
+        
+        let total_time = app.viz_time;
+        let index = (total_time / cycle_time) as usize % viz_list.len();
+        let next_index = (index + 1) % viz_list.len();
+        let time_in_cycle = total_time % cycle_time;
+        
+        if time_in_cycle > (cycle_time - transition_time) {
+            // Прогресс перехода от 0.0 до 1.0
+            let mut progress = (time_in_cycle - (cycle_time - transition_time)) / transition_time;
+            
+            // ТЕХНО-ФИШКА 1: Если бьет бас, переход ускоряется 
+            if bass > 0.6 {
+                progress = (progress * 1.5).min(1.0);
+            }
+            
+            let mode_a = viz_list[index];
+            let mode_b = viz_list[next_index];
+            
+            let mut canvas_a = vec![(0u8, Color::Reset); w * h];
+            let mut canvas_b = vec![(0u8, Color::Reset); w * h];
+            
+            draw_mode(mode_a, &mut canvas_a, w, h, app, &freqs, bass, mid, treble);
+            draw_mode(mode_b, &mut canvas_b, w, h, app, &freqs, bass, mid, treble);
+            
+            // Каждые несколько кадров картинка "дергается" в сторону
+            let glitch_x = if (app.tick / 2) % 10 == 0 {
+                ((app.tick * 13) % 10) as i32 - 5 // Сдвиг от -5 до +5
+            } else {
+                0
+            };
+
+            for y in 0..h {
+                for x in 0..w {
+                    // Применяем глитч-сдвиг (с защитой от выхода за границы)
+                    let src_x = (x as i32 - glitch_x).clamp(0, w as i32 - 1) as usize;
+                    let idx = y * w + src_x;
+
+                    let (on_a, col_a) = canvas_a[idx];
+                    let (on_b, col_b) = canvas_b[idx];
+                    
+                    // Если оба визуализатора в этой точке активны
+                    if on_a > 0 && on_b > 0 {
+                        let mixed = blend_techno(col_a, col_b, progress, x, y);
+                        canvas[y * w + x] = (1, mixed);
+                    } else if on_a > 0 {
+                        // Старый визуализатор распадается на пиксели
+                        if progress < (0.9 - (x as f64 / w as f64) * 0.3) { // Волна распада слева направо
+                            canvas[y * w + x] = (1, fade_color(col_a, 1.0 - progress));
+                        }
+                    } else if on_b > 0 {
+                        // Новый визуализатор собирается из шума
+                        if progress > (x as f64 / w as f64) * 0.3 {
+                            canvas[y * w + x] = (1, fade_color(col_b, progress));
+                        }
+                    }
+                }
+            }
+        } else {
+            let mode_a = viz_list[index];
+            draw_mode(mode_a, &mut canvas, w, h, app, &freqs, bass, mid, treble);
+        }
+    } else {
+        // --- ОБЫЧНЫЕ РЕЖИМЫ ---
+        match app.viz_mode {
+            0 => draw_sphere(&mut canvas, w, h, app.viz_time, bass, mid, treble),
+            1 => draw_radial(&mut canvas, w, h, app.viz_time, &freqs),
+            2 => draw_tunnel(&mut canvas, w, h, app.viz_time, &freqs, bass),
+            5 => draw_dna(&mut canvas, w, h, app.viz_time, bass, mid, treble),
+            8 => draw_ocean(&mut canvas, w, h, app.viz_time, bass, mid),
+            9 => draw_black_hole(&mut canvas, w, h, app.viz_time, bass, mid, treble),
+            10 => draw_plasma(&mut canvas, w, h, app.viz_time, bass, mid, treble),
+            11 => draw_spirograph(&mut canvas, w, h, app.viz_time, bass, mid, treble),
+            12 => draw_warp(&mut canvas, w, h, app.viz_time, bass, treble),
+            _ => {}
+        }
     }
 
-    // Конвертируем попиксельный canvas в символы Брайля.
+    // Конвертация в Брайль
     let mut lines = Vec::new();
     for y in 0..inner.height {
         let mut spans = Vec::new();
@@ -378,18 +447,14 @@ fn render_visualizer(f: &mut Frame, app: &App, area: Rect) {
                     }
                 }
             }
-            spans.push(if has { 
-                Span::styled(char::from_u32(code).unwrap_or(' ').to_string(), Style::default().fg(col)) 
-            } else { 
-                Span::raw(" ") 
-            });
+            spans.push(if has { Span::styled(char::from_u32(code).unwrap_or(' ').to_string(), Style::default().fg(col)) } else { Span::raw(" ") });
         }
         lines.push(Line::from(spans));
     }
     f.render_widget(Paragraph::new(lines), inner);
 }
 
-/// Окно с текстом песни (караоке). Автоматически скроллит к текущей строке.
+/// Окно с текстом песни 
 fn render_lyrics(f: &mut Frame, app: &App) {
     let accent_color = parse_hex(&app.config.theme.accent_color);
     let area = centered_rect(60, 80, f.area());
@@ -418,7 +483,7 @@ fn render_lyrics(f: &mut Frame, app: &App) {
             else if *time > app.time_pos + 0.15 { break; }
         }
         
-        // Если пользователь вручную скроллил — используем его позицию. Иначе авто-центрирование.
+        // Если вручную скроллил — используем его позицию. Иначе авто-центрирование.
         let scroll = if let Some(s) = app.lyrics_scroll { 
             s 
         } else { 
@@ -445,7 +510,7 @@ fn render_lyrics(f: &mut Frame, app: &App) {
     }
 }
 
-/// Окно справки. Разбито на логические блоки.
+/// Окно справки
 fn render_help(f: &mut Frame, app: &App) {
     let accent_color = parse_hex(&app.config.theme.accent_color);
     let active_border = parse_hex(&app.config.theme.active_border);
@@ -509,7 +574,7 @@ fn render_help(f: &mut Frame, app: &App) {
 }
 
 // ==========================================
-// ВИЗУАЛИЗАТОРЫ (без изменений, работают как раньше)
+// ВИЗУАЛИЗАТОРЫ 
 // ==========================================
 
 fn centered_rect(px: u16, py: u16, r: Rect) -> Rect {
@@ -788,6 +853,331 @@ fn render_skull(f: &mut Frame, area: Rect, t: f64, bass: f64, treble: f64) {
     f.render_widget(Paragraph::new(lines), area);
 }
 
+
+fn draw_ocean(canvas: &mut [(u8, Color)], w: usize, h: usize, t: f64, bass: f64, mid: f64) {
+    let cx = w as f64 / 2.0;
+    let cy = h as f64 * 0.35; // Линия горизонта чуть выше середины
+    let fov = 400.0; // Угол обзора (фокусное расстояние)
+
+    let max_z = 40.0; // Глубина океана
+
+    let mut prev_row: Vec<Option<(i32, i32)>> = vec![None; 80];
+
+    for z_step in (0..40).rev() {
+        let z = z_step as f64 + 1.0; 
+        
+        let scale = fov / z;
+
+        let mut current_row: Vec<Option<(i32, i32)>> = vec![None; 80];
+        for x_step in 0..80 {
+            let x = (x_step as f64 - 40.0) * 0.5; 
+
+            // Вычисляем высоту волны (шум)
+            // Басы делают волны огромными, миды — более частыми
+            let wave_freq = 0.5 + mid * 0.5;
+            let wave = (x * wave_freq + t * 1.5).sin() * (z * 0.2 - t * 2.0).cos();
+            
+            let amplitude = (10.0 + bass * 40.0) * scale * 0.2; 
+            let y_offset = wave * amplitude;
+
+            let px = cx + x * scale;
+            let py = cy + (scale * 1.5) + y_offset;
+
+            let px_i = px as i32;
+            let py_i = py as i32;
+
+            // Проверка границ
+            if px_i >= 0 && px_i < w as i32 && py_i >= 0 && py_i < h as i32 {
+                current_row[x_step] = Some((px_i, py_i));
+                
+                // Цвет: чем ближе (меньше Z), тем ярче. Градиент от синего к фиолетовому
+                let depth_ratio = z / max_z;
+                let col = get_gradient(1.0 - depth_ratio);
+
+                if x_step > 0 {
+                    if let Some((prev_px, prev_py)) = current_row[x_step - 1] {
+                        draw_line(canvas, w, h, prev_px, prev_py, px_i, py_i, col);
+                    }
+                }
+
+                if let Some((prev_px, prev_py)) = prev_row[x_step] {
+                    let col_z = if bass > 0.6 { Color::Rgb(200, 255, 255) } else { col };
+                    draw_line(canvas, w, h, prev_px, prev_py, px_i, py_i, col_z);
+                }
+            }
+        }
+        prev_row = current_row;
+    }
+}
+
+fn draw_black_hole(canvas: &mut [(u8, Color)], w: usize, h: usize, t: f64, bass: f64, mid: f64, treble: f64) {
+    let (cx, cy) = (w as f64 / 2.0, h as f64 / 2.0);
+    let event_horizon = 5.0 + bass * 25.0; 
+    
+    let r_max = (w.max(h) as f64) * 0.6;
+    let r_min = event_horizon;
+    
+    // 1. В(от)сасывание
+    let num_disk = 1200;
+    for i in 0..num_disk {
+        let base_angle = (i as f64 * 2.399) % (std::f64::consts::PI * 2.0);
+        
+        let offset = (i as f64 * 0.013) % 1.0;
+        let speed = 0.2 + mid * 0.5;
+        let p = (t * speed + offset) % 1.0;
+        
+        let r = r_max - (r_max - r_min) * p;
+        let swirl = (1.0 - p) * 10.0 * t;
+        let angle = base_angle + swirl;
+
+        let tilt = 0.35;
+        let x = cx + angle.cos() * r;
+        let y = cy + angle.sin() * r * tilt;
+        
+
+        let p_prev = (p - 0.03).max(0.0);
+        let r_prev = r_max - (r_max - r_min) * p_prev;
+        let swirl_prev = (1.0 - p_prev) * 10.0 * t;
+        let angle_prev = base_angle + swirl_prev;
+        let x_prev = cx + angle_prev.cos() * r_prev;
+        let y_prev = cy + angle_prev.sin() * r_prev * tilt;
+
+        let col = if p > 0.9 {
+            Color::White
+        } else if p > 0.6 {
+            Color::Rgb(255, 200, 100) // Желтый
+        } else if p > 0.3 {
+            Color::Rgb(255, 100, 50)  // Оранжевый
+        } else {
+            Color::Rgb(150, 50, 150)  // Фиолетовый
+        };
+
+        draw_line(canvas, w, h, x_prev as i32, y_prev as i32, x as i32, y as i32, col);
+    }
+
+    // 2. выброс нахуй от центра
+    let num_ejecta = 300;
+    for i in 0..num_ejecta {
+        let angle = (i as f64 * 3.14) % (std::f64::consts::PI * 2.0);
+
+        let offset = (i as f64 * 0.02) % 1.0;
+        let speed = 0.5 + treble * 1.5;
+        let p = (t * speed + offset) % 1.0;
+        
+        let r = r_min + p * r_max * 0.5;
+        
+        let angle_warped = angle + p * 2.0;
+        let x = cx + angle_wobble(angle_warped, p) * r;
+        let y = cy + angle_wobble(angle_warped + 1.57, p) * r;
+
+        let p_prev = (p - 0.05).max(0.0);
+        let r_prev = r_min + p_prev * r_max * 0.5;
+        let angle_prev = angle + p_prev * 2.0;
+        let x_prev = cx + angle_wobble(angle_prev, p_prev) * r_prev;
+        let y_prev = cy + angle_wobble(angle_prev + 1.57, p_prev) * r_prev;
+
+        let col = if p < 0.2 {
+            Color::Rgb(100, 255, 255) // Ярко-голубой у центра
+        } else {
+            Color::Rgb(50, 100, 200)  // Затухающий синий
+        };
+
+        draw_line(canvas, w, h, x_prev as i32, y_prev as i32, x as i32, y as i32, col);
+    }
+
+    // 3. горизонт дыри
+    for y in (cy - event_horizon) as i32..=(cy + event_horizon) as i32 {
+        for x in (cx - event_horizon) as i32..=(cx + event_horizon) as i32 {
+            let dist = ((x as f64 - cx).powi(2) + (y as f64 - cy).powi(2)).sqrt();
+            if dist < event_horizon {
+                plot(canvas, w, h, x, y, Color::Rgb(0, 0, 0));
+            }
+        }
+    }
+}
+
+fn angle_wobble(angle: f64, p: f64) -> f64 {
+    angle.cos() * (1.0 + (p * 10.0).sin() * 0.2)
+}
+
+fn draw_plasma(canvas: &mut [(u8, Color)], w: usize, h: usize, t: f64, bass: f64, _mid: f64, _treble: f64) {
+    for y in 0..h {
+        for x in 0..w {
+            let xf = x as f64 * 0.02;
+            let yf = y as f64 * 0.04; 
+
+            // Формула плазмы
+            let v1 = (xf * 2.0 + t).sin();
+            let v2 = (yf * 2.0 - t).cos();
+            let v3 = ((xf + yf) * 1.5 + t * 1.5).sin();
+            let v4 = ((xf.powi(2) + yf.powi(2)).sqrt() * 3.0 - t * 2.0).cos();
+            
+            // Суммируем и нормализуем от -4..4 в 0..1
+            let plasma = (v1 + v2 + v3 + v4 + 4.0) / 8.0;
+            
+            let final_v = (plasma * (1.0 + bass * 2.0)).fract().abs();
+            
+            let col = get_gradient(final_v);
+            plot(canvas, w, h, x as i32, y as i32, col);
+        }
+    }
+}
+
+fn draw_spirograph(canvas: &mut [(u8, Color)], w: usize, h: usize, t: f64, bass: f64, _mid: f64, treble: f64) {
+    let (cx, cy) = (w as f64 / 2.0, h as f64 / 2.0);
+    
+    let aspect = 0.5; 
+    let k = 7.0; 
+    let r = 1.0;
+    let big_r = r * k; 
+    let d = big_r * (0.3 + treble * 0.4); 
+
+    let max_r = (w.min(h) as f64) * 0.4 * (1.0 + bass * 0.2);
+    let scale = max_r / big_r;
+
+    let rotation = t * 0.2;
+    
+    let mut prev: Option<(i32, i32)> = None;
+    let steps = 1000; 
+
+    for i in 0..=steps {
+        let angle = (i as f64 / steps as f64) * std::f64::consts::PI * 2.0;
+        
+        let x = (big_r - r) * angle.cos() + d * (((big_r - r) / r) * angle).cos();
+        let y = (big_r - r) * angle.sin() - d * (((big_r - r) / r) * angle).sin();
+
+        let rx = x * rotation.cos() - y * rotation.sin();
+        let ry = x * rotation.sin() + y * rotation.cos();
+
+        let px = cx + rx * scale;
+        let py = cy + ry * scale * aspect;
+
+        let col = get_gradient((i as f64 / steps as f64 + t * 0.1) % 1.0);
+
+        if let Some((ppx, ppy)) = prev {
+            if i % 2 == 0 {
+                draw_line(canvas, w, h, ppx, ppy, px as i32, py as i32, col);
+            }
+        }
+        prev = Some((px as i32, py as i32));
+
+        if i % 8 == 0 {
+            let seed = i as f64 * 1.618;
+            
+            let life = (t * 0.5 + seed).fract();
+            
+            let emit_angle = (seed * 10.0) % (std::f64::consts::PI * 2.0);
+            
+            let dist = life * 30.0; 
+            
+            let p_x = px + emit_angle.cos() * dist;
+            let p_y = py + emit_angle.sin() * dist * aspect;
+            
+            let fade = 1.0 - life;
+            
+            if let Color::Rgb(r_col, g_col, b_col) = col {
+                let p_col = Color::Rgb(
+                    (r_col as f64 * fade) as u8,
+                    (g_col as f64 * fade) as u8,
+                    (b_col as f64 * fade) as u8,
+                );
+                
+                plot(canvas, w, h, p_x as i32, p_y as i32, p_col);
+                
+
+                if life < 0.3 {
+                    plot(canvas, w, h, p_x as i32 + 1, p_y as i32, p_col);
+                    plot(canvas, w, h, p_x as i32, p_y as i32 + 1, p_col);
+                }
+            }
+        }
+    }
+}
+
+
+fn draw_warp(canvas: &mut [(u8, Color)], w: usize, h: usize, t: f64, bass: f64, treble: f64) {
+    let (cx, cy) = (w as f64 / 2.0, h as f64 / 2.0);
+    let max_z = 150.0;
+    let fov = 300.0; 
+    
+    let speed = 20.0 + bass * 180.0; 
+
+
+    let num_stars = 400;
+    for i in 0..num_stars {
+        // Распределяем звезды по спирали в цилиндре
+        let theta = (i as f64 * 2.39996) % (std::f64::consts::PI * 2.0);
+        let r_3d = (i as f64 % 100.0) / 50.0 + 0.1; // Радиус от центра 
+        
+        let x_3d = r_3d * theta.cos();
+        let y_3d = r_3d * theta.sin();
+
+        let offset = (i as f64 * 13.7) % max_z;
+        let z = (max_z - (t * speed + offset) % max_z).max(1.0);
+
+        let scale = fov / z;
+        let px = cx + x_3d * scale;
+        let py = cy + y_3d * scale * 0.5;
+
+        let prev_z = (z + speed * 0.05).min(max_z); 
+        let prev_scale = fov / prev_z;
+        let prev_px = cx + x_3d * prev_scale;
+        let prev_py = cy + y_3d * prev_scale * 0.5;
+
+        let col = if z < 15.0 {
+            if treble > 0.5 && i % 3 == 0 { Color::White } else { Color::Rgb(150, 255, 255) }
+        } else if z < 50.0 {
+            Color::Rgb(100, 150, 255)
+        } else if z < 100.0 {
+            Color::Rgb(50, 50, 200)
+        } else {
+            Color::Rgb(20, 20, 80)
+        };
+
+        draw_line(canvas, w, h, prev_px as i32, prev_py as i32, px as i32, py as i32, col);
+
+        // 2. ГЕНЕРАЦИЯ ИСКР
+        if i % 5 == 0 {
+            for j in 0..3 {
+                let spark_seed = i as f64 + j as f64 * 13.0;
+                
+                let spark_z = (max_z - (t * speed * 1.5 + spark_seed * 17.0) % max_z).max(1.0);
+                let spark_scale = fov / spark_z;
+                
+                let angle_offset = (spark_seed * 10.0).fract() * std::f64::consts::PI * 2.0;
+                let dist_offset = (spark_seed * 3.0).fract() * 0.2; 
+                
+                let sx_3d = x_3d + angle_offset.cos() * dist_offset;
+                let sy_3d = y_3d + angle_offset.sin() * dist_offset;
+
+                let spark_px = cx + sx_3d * spark_scale;
+                let spark_py = cy + sy_3d * spark_scale * 0.5;
+
+                // Искры видны только вблизи
+                if spark_z < 80.0 {
+                    let spark_col = if spark_z < 20.0 { Color::White } else { Color::Rgb(100, 200, 255) };
+                    plot(canvas, w, h, spark_px as i32, spark_py as i32, spark_col);
+                    plot(canvas, w, h, spark_px as i32 + 1, spark_py as i32, spark_col);
+                    plot(canvas, w, h, spark_px as i32, spark_py as i32 + 1, spark_col);
+                }
+            }
+        }
+    }
+
+    //центр.вспышка
+    let core_radius = 2.0 + bass * 8.0;
+    for y in (cy - core_radius) as i32..=(cy + core_radius) as i32 {
+        for x in (cx - core_radius) as i32..=(cx + core_radius) as i32 {
+            let dist = ((x as f64 - cx).powi(2) + (y as f64 - cy).powi(2)).sqrt();
+            if dist < core_radius {
+                // Чем ближе к центру, тем ярче
+                let col = if dist < core_radius * 0.5 { Color::White } else { Color::Rgb(150, 200, 255) };
+                plot(canvas, w, h, x, y, col);
+            }
+        }
+    }
+}
+
 fn draw_sphere(canvas: &mut [(u8, Color)], w: usize, h: usize, t: f64, bass: f64, mid: f64, treble: f64) {
     let (cx, cy) = (w as f64 / 2.0, h as f64 / 2.0);
     let max_r = (cx*cx + cy*cy).sqrt() * 0.4 * (1.0 + bass * 0.6);
@@ -850,6 +1240,33 @@ fn draw_sphere(canvas: &mut [(u8, Color)], w: usize, h: usize, t: f64, bass: f64
             }
             prev = Some((px, py));
         }
+    }
+}
+
+/// Вызывает нужную функцию рисования на основе индекса режима
+fn draw_mode(mode: usize, canvas: &mut [(u8, Color)], w: usize, h: usize, app: &App, freqs: &[f64], bass: f64, mid: f64, treble: f64) {
+    match mode {
+        0 => draw_sphere(canvas, w, h, app.viz_time, bass, mid, treble),
+        1 => draw_radial(canvas, w, h, app.viz_time, freqs),
+        2 => draw_tunnel(canvas, w, h, app.viz_time, freqs, bass),
+        8 => draw_ocean(canvas, w, h, app.viz_time, bass, mid),
+        9 => draw_black_hole(canvas, w, h, app.viz_time, bass, mid, treble),
+        10 => draw_plasma(canvas, w, h, app.viz_time, bass, mid, treble),
+        11 => draw_spirograph(canvas, w, h, app.viz_time, bass, mid, treble),
+        12 => draw_warp(canvas, w, h, app.viz_time, bass, treble),
+        _ => {}
+    }
+}
+
+// Плавно затухает цвет (уменьшает яркость RGB)
+fn fade_color(color: Color, factor: f64) -> Color {
+    match color {
+        Color::Rgb(r, g, b) => Color::Rgb(
+            (r as f64 * factor).clamp(0.0, 255.0) as u8,
+            (g as f64 * factor).clamp(0.0, 255.0) as u8,
+            (b as f64 * factor).clamp(0.0, 255.0) as u8,
+        ),
+        c => c, // Если цвет не RGB (например, Reset), возвращаем как есть
     }
 }
 
@@ -1052,8 +1469,6 @@ fn render_train(f: &mut Frame, area: Rect, t: f64, bass: f64, _mid: f64, treble:
     f.render_widget(Paragraph::new(lines), area);
 }
 
-/// Ambient-эффект: цветные частицы-искры по всему экрану.
-/// Рисуются только в пустых ячейках, поэтому текст никогда не перекрывается.
 fn render_ambient_effect(f: &mut Frame, app: &App, skip: Rect) {
     let area = f.area();
     let buf = f.buffer_mut();
@@ -1068,11 +1483,9 @@ fn render_ambient_effect(f: &mut Frame, app: &App, skip: Rect) {
         if let Some(cell) = buf.cell_mut((x, y)) {
             if cell.symbol() != " " { continue; }
 
-            // Используем ту же палитру, что и в визуализаторе
-            let ratio = 1.0 - p.life; // 0.0 (новая) -> 1.0 (старая)
+            let ratio = 1.0 - p.life;
             let mut color = get_gradient(ratio);
             
-            // Затухание (чтобы не были слишком яркими)
             if let Color::Rgb(r, g, b) = color {
                 let v = (p.life * 0.7).clamp(0.0, 1.0);
                 color = Color::Rgb((r as f64 * v) as u8, (g as f64 * v) as u8, (b as f64 * v) as u8);
@@ -1084,6 +1497,40 @@ fn render_ambient_effect(f: &mut Frame, app: &App, skip: Rect) {
     }
 }
 
+fn blend_techno(c1: Color, c2: Color, progress: f64, x: usize, _y: usize) -> Color {
+    let (r1, g1, b1) = match c1 { Color::Rgb(r, g, b) => (r, g, b), _ => (0, 0, 0) };
+    let (r2, g2, b2) = match c2 { Color::Rgb(r, g, b) => (r, g, b), _ => (0, 0, 0) };
+
+    // Базовая интерполяция
+    let mut r = (r1 as f64 * (1.0 - progress) + r2 as f64 * progress) as i32;
+    let mut g = (g1 as f64 * (1.0 - progress) + g2 as f64 * progress) as i32;
+    let mut b = (b1 as f64 * (1.0 - progress) + b2 as f64 * progress) as i32;
+
+    // Хроматическая аберрация: на пике перехода (progress ~ 0.5) 
+    // каналы R и B "разъезжаются" в стороны
+    let aberration = ((std::f64::consts::PI * progress).sin() * 30.0) as i32;
+    
+    // Сдвигаем красный канал вправо, синий влево (зависит от координаты X)
+    let shift = (x as i32 % 10) - 5; 
+    if aberration > 0 {
+        r = (r + aberration + shift).clamp(0, 255);
+        b = (b - aberration + shift).clamp(0, 255);
+    }
+
+    // Неоновый буст: делаем цвета более "кислотными"
+    let max_c = r.max(g).max(b);
+    if max_c > 100 {
+        // Подмешиваем магнету и циан
+        let is_transition_peak = progress > 0.4 && progress < 0.6;
+        if is_transition_peak {
+            r = (r as f64 * 1.5).min(255.0) as i32; // Красный/Магента
+            g = (g as f64 * 0.5) as i32;             // Гасим зеленый
+            b = (b as f64 * 1.5).min(255.0) as i32; // Синий/Циан
+        }
+    }
+
+    Color::Rgb(r as u8, g as u8, b as u8)
+}
 
 fn render_eq(f: &mut Frame, app: &App) {
     let accent_color = parse_hex(&app.config.theme.accent_color);

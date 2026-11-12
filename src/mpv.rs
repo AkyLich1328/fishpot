@@ -30,7 +30,6 @@ impl Mpv {
         let socket_path = std::env::temp_dir().join(format!("fishpot-{}.sock", std::process::id()));
         let _ = std::fs::remove_file(&socket_path);
 
-        // Логи mpv идут в файл — для отладки проблем с воспроизведением.
         let log_file = std::fs::File::create("/tmp/fishpot.log")?;
         let log_err = log_file.try_clone()?;
 
@@ -48,7 +47,6 @@ impl Mpv {
             .stderr(Stdio::from(log_err))
             .spawn()?;
 
-        // Ждём сокет, но не бесконечно — если mpv умер, не зависаем.
         let mut attempts = 0;
         let stream = loop {
             if let Ok(s) = UnixStream::connect(&socket_path) { break s; }

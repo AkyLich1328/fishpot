@@ -4,8 +4,6 @@ pub fn fetch_lyrics(title: &str) -> Result<Vec<(f64, String)>, String> {
     let query = urlencoding::encode(title);
     let url = format!("https://lrclib.net/api/search?q={}", query);
 
-    // Устанавливаем таймаут 10 секунд, чтобы не зависнуть навсегда при сбое сервера.
-    // ureq позволяет задать таймаут только через Agent.
     let agent: ureq::Agent = ureq::AgentBuilder::new()
         .timeout(std::time::Duration::from_secs(10))
         .build();
@@ -23,7 +21,6 @@ pub fn fetch_lyrics(title: &str) -> Result<Vec<(f64, String)>, String> {
             }
             if let Some(plain) = item["plainLyrics"].as_str() {
                 if !plain.is_empty() {
-                    // Возвращаем с -1.0 в качестве времени — UI понимает, что это не караоке.
                     return Ok(plain.lines().map(|l| (-1.0, l.to_string())).collect());
                 }
             }
@@ -32,8 +29,6 @@ pub fn fetch_lyrics(title: &str) -> Result<Vec<(f64, String)>, String> {
     Err("Текст не найден".into())
 }
 
-/// Парсит LRC-формат: `[00:12.34] Текст строки`.
-/// Возвращает отсортированный по времени вектор (время_в_секундах, текст).
 fn parse_lrc(lrc: &str) -> Vec<(f64, String)> {
     // Примерное количество строк для уменьшения реаллокаций.
     let mut result = Vec::with_capacity(lrc.lines().count());
@@ -65,7 +60,6 @@ fn parse_lrc(lrc: &str) -> Vec<(f64, String)> {
         }
     }
     
-    // LRC может содержать строки в произвольном порядке — сортируем.
     result.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     result
 }
