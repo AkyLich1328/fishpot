@@ -93,5 +93,22 @@
 | **Rust 1.75+** | Сборка | `sudo pacman -S rust` |
 
 Если `cava` не установлена, визуализаторы будут работать на симуляции (менее красиво, но функционально).
+---
 
 ---
+### 📦 Установка
+
+**Arch Linux (бинарник):**
+```bash
+tar -xzf fishpot-v0.2.0-x86_64.tar.gz
+chmod +x fishpot
+sudo mv fishpot /usr/local/bin/
+fishpot
+```
+
+**Из Исходников:**    
+```bash
+git clone https://github.com/AkyLich1328/fishpot.git
+cd fishpot
+cargo build --release
+```
