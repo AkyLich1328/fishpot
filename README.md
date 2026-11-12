@@ -11,6 +11,8 @@
 
 ---
 
+[![Демонстрация Fishpot](https://img.youtube.com/vi/x3ujpkL0YU80.jpg)](https://www.youtube.com/watch?v=x3ujpkL0YU8)
+
 ## ✨ Возможности
 
 ### 🎧 Воспроизведение
