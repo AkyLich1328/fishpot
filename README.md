@@ -111,15 +111,14 @@
 
 Файл конфига создаётся **автоматически при первом запуске** по пути:
 
-\`\`\`
+``````
 ~/.config/fishpot/config.toml
-\`\`\`
+``````
 
 Если файла нет — Fishpot создаст его с настройками по умолчанию Все изменения вступают в силу **после перезапуска приложения**.
-
 ### Полный пример конфига
 
-\`\`\`toml
+``````toml
 # Куда скачивать треки (абсолютный путь)
 download_dir = "/home/user/Music/fishpot"
 
@@ -143,9 +142,9 @@ selected_bg = "#283250"
 transparent_panels = false
 transparent_visualizer = false
 
-# Максимум частиц ambient-эффекта (минимум 50, рекомендуется 200–1000)
+# Максимум частиц ambient-эффекта (минимум 50, рекомендуется 100–500)
 ambient_count = 200
-\`\`\`
+``````
 
 ### Описание параметров
 
@@ -176,26 +175,26 @@ ambient_count = 200
 Если хотите, чтобы панели «парили» над вашими обоями:
 
 1. Включите прозрачность в Alacritty:
-   \`\`\`toml
+   ``````toml
    [window]
    opacity = 0.85
-   \`\`\`
+   ``````
 
 2. В конфиге Fishpot:
-   \`\`\`toml
+   ``````toml
    [theme]
    transparent_panels = true
    transparent_visualizer = true
-   \`\`\`
+   ``````
 
 ### Сброс к дефолту
 
 Удалите файл и запустите Fishpot заново:
 
-\`\`\`bash
+``````bash
 rm ~/.config/fishpot/config.toml
 fishpot
-\`\`\`
+``````
 
 Будет создан новый конфиг с настройками по умолчанию. **Скачанные треки, история поиска — не затрагиваются** (они лежат в отдельных файлах).
 
@@ -203,15 +202,15 @@ fishpot
 
 Если после редактирования Fishpot молча создал новый дефолтный конфиг — значит, в TOML была ошибка. Проверить можно через Python:
 
-\`\`\`bash
+``````bash
 python -c "import tomllib; tomllib.load(open('$HOME/.config/fishpot/config.toml','rb'))"
-\`\`\`
+``````
 
 Если ошибок нет — команда ничего не выведет. Если есть — покажет строку и столбец с проблемой.
-
 ---
 
-## 📸 Скриншоты
+<details>
+<summary><h3>📸 Показать скриншоты</h3></summary>
 
 <img width="1359" height="740" alt="image" src="https://github.com/user-attachments/assets/d487c950-15be-4cbf-b5fa-06cf40d5c733" />
 
@@ -233,7 +232,7 @@ python -c "import tomllib; tomllib.load(open('$HOME/.config/fishpot/config.toml'
 
 <img width="1360" height="730" alt="image" src="https://github.com/user-attachments/assets/00233dd5-2a38-44cb-9210-488365ca75df" />
 
-
+</details>
 
 ---
 
