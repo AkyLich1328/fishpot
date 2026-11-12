@@ -256,7 +256,7 @@ python -c "import tomllib; tomllib.load(open('$HOME/.config/fishpot/config.toml'
 
 **Arch Linux (бинарник):**
 ```bash
-tar -xzf fishpot-v0.2.0-x86_64.tar.gz
+tar -xzf fishpot-v0.3.0-x86_64.tar.gz
 chmod +x fishpot
 sudo mv fishpot /usr/local/bin/
 fishpot
