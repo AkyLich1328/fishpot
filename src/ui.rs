@@ -10,7 +10,11 @@ use crate::config::parse_hex;
 
 /// Верхняя строка статуса: громкость, режим повтора, прогресс скачивания, статус, пауза, играющий трек.
 fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
-    let bg_color = parse_hex(&app.config.theme.bg_color);
+    let bg_color = if app.config.theme.transparent_panels {
+        Color::Reset
+    } else {
+        parse_hex(&app.config.theme.bg_color)
+    };
     let inactive_border = parse_hex(&app.config.theme.inactive_border);
     let active_border = parse_hex(&app.config.theme.active_border);
 
@@ -52,9 +56,13 @@ fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Paragraph::new(status_line).style(Style::default().bg(bg_color)), area);
 }
 pub fn draw(f: &mut Frame, app: &App) {
-    // Заливаем весь экран фоновым цветом из темы — так интерфейс выглядит цельным.
-    let bg_color = parse_hex(&app.config.theme.bg_color);
-    f.render_widget(Block::default().style(Style::default().bg(bg_color)), f.area());
+    // Если панели прозрачные — используем Reset (терминальный фон), иначе — тему
+    let app_bg = if app.config.theme.transparent_panels {
+        Color::Reset
+    } else {
+        parse_hex(&app.config.theme.bg_color)
+    };
+    f.render_widget(Block::default().style(Style::default().bg(app_bg)), f.area());
 
     // Полноэкранный режим — только визуализатор и строка статуса.
     if app.fullscreen_viz {
@@ -154,6 +162,20 @@ pub fn draw(f: &mut Frame, app: &App) {
     );
 
     render_status_bar(f, app, chunks[3]);
+
+    let viz_rect = if app.show_results {
+        Layout::horizontal([
+            Constraint::Percentage(25), Constraint::Percentage(40), Constraint::Percentage(35),
+        ]).split(chunks[1])[2]
+    } else {
+        Layout::horizontal([
+            Constraint::Percentage(30), Constraint::Percentage(70),
+        ]).split(chunks[1])[1]
+    };
+
+    if app.ambient_effect {
+        render_ambient_effect(f, app, viz_rect);
+    }
 
     // Всплывающие окна рисуются последними — они перекрывают всё остальное.
     if app.show_help { render_help(f, app); }
@@ -286,12 +308,18 @@ fn render_visualizer(f: &mut Frame, app: &App, area: Rect) {
         _ => " Визуализатор ",
     };
     
+    let viz_bg = if app.config.theme.transparent_visualizer {
+        Color::Reset
+    } else {
+        Color::Rgb(10, 10, 15)
+    };
+
     let block = Block::bordered()
         .title(title)
         .title_alignment(ratatui::layout::Alignment::Center)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(active_border))
-        .style(Style::default().bg(Color::Rgb(10, 10, 15)));
+        .style(Style::default().bg(viz_bg));
         
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -437,7 +465,8 @@ fn render_help(f: &mut Frame, app: &App) {
         Line::from(vec![Span::styled("E ", key_style), Span::styled("Открыть эквалайзер", desc_style)]),
         Line::from(vec![Span::styled("L ", key_style), Span::styled("Показать текст песни (караоке)", desc_style)]),
         Line::from(vec![Span::styled("V ", key_style), Span::styled("Сменить визуализацию (8 режимов)", desc_style)]),
-              Line::from(vec![Span::styled("D ", key_style), Span::styled("Скачивание аудиофайла", desc_style)]),
+        Line::from(vec![Span::styled("D ", key_style), Span::styled("Скачивание аудиофайла", desc_style)]),
+        Line::from(vec![Span::styled("A ", key_style),Span::styled("Ambient-эффект (частицы в пустых местах)", desc_style)]),
         Line::from(vec![Span::styled("q ", key_style), Span::styled("Выход", desc_style)]),
         Line::from(""),
         
@@ -1022,6 +1051,39 @@ fn render_train(f: &mut Frame, area: Rect, t: f64, bass: f64, _mid: f64, treble:
     }
     f.render_widget(Paragraph::new(lines), area);
 }
+
+/// Ambient-эффект: цветные частицы-искры по всему экрану.
+/// Рисуются только в пустых ячейках, поэтому текст никогда не перекрывается.
+fn render_ambient_effect(f: &mut Frame, app: &App, skip: Rect) {
+    let area = f.area();
+    let buf = f.buffer_mut();
+
+    for p in &app.ambient_particles {
+        let x = area.x + (p.x * area.width as f64) as u16;
+        let y = area.y + (p.y * area.height as f64) as u16;
+
+        if x >= area.x + area.width || y >= area.y + area.height { continue; }
+        if skip.contains((x, y).into()) { continue; }
+
+        if let Some(cell) = buf.cell_mut((x, y)) {
+            if cell.symbol() != " " { continue; }
+
+            // Используем ту же палитру, что и в визуализаторе
+            let ratio = 1.0 - p.life; // 0.0 (новая) -> 1.0 (старая)
+            let mut color = get_gradient(ratio);
+            
+            // Затухание (чтобы не были слишком яркими)
+            if let Color::Rgb(r, g, b) = color {
+                let v = (p.life * 0.7).clamp(0.0, 1.0);
+                color = Color::Rgb((r as f64 * v) as u8, (g as f64 * v) as u8, (b as f64 * v) as u8);
+            }
+
+            cell.set_symbol(&p.ch.to_string());
+            cell.set_fg(color);
+        }
+    }
+}
+
 
 fn render_eq(f: &mut Frame, app: &App) {
     let accent_color = parse_hex(&app.config.theme.accent_color);

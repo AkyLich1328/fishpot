@@ -32,12 +32,6 @@ impl Track {
         self.url()
     }
 
-    pub fn duration_str(&self) -> String {
-        match self.duration {
-            Some(d) => format!("{:02}:{:02}", d as u64 / 60, d as u64 % 60),
-            None => "--:--".into(),
-        }
-    }
 }
 
 pub fn search(query: &str, n: usize) -> Result<Vec<Track>, String> {

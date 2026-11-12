@@ -6,6 +6,7 @@ mod ui;
 mod ytdlp;
 
 use std::io;
+use std::path::PathBuf; 
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
     execute,
@@ -23,6 +24,16 @@ fn main() -> io::Result<()> {
         }
     }
 
+    // Собираем аргументы командной строки (файлы или папки)
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut initial_files = Vec::new();
+    for arg in args {
+        let p = PathBuf::from(arg);
+        if p.exists() {
+            initial_files.push(p);
+        }
+    }
+
     // enable_raw_mode отключает канонический ввод (Enter), чтобы читать каждое нажатие.
     // EnterAlternateScreen создает "второй экран" — после выхода вернётся исходный.
     enable_raw_mode()?;
@@ -31,7 +42,7 @@ fn main() -> io::Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = app::App::new();
+    let mut app = app::App::new(initial_files); 
     let result = app.run(&mut terminal);
 
     // Восстановление терминала обязательно даже при ошибке app.run.

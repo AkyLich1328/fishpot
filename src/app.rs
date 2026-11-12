@@ -4,6 +4,52 @@ use ratatui::{backend::Backend, Terminal};
 use notify_rust::Notification;
 use crate::{mpv::Mpv, ui, ytdlp::{self, Track}, api, config::AppConfig};
 
+/// Частица для ambient-эффекта: летит по экрану, тускнеет со временем.
+#[derive(Clone)]
+pub struct Particle {
+    pub x: f64,       // нормализованная позиция 0.0..1.0
+    pub y: f64,
+    pub vx: f64,      // скорость в нормализованных единицах за кадр
+    pub vy: f64,
+    pub life: f64,    // 1.0 = только родилась, 0.0 = умерла
+    pub decay: f64,   // насколько уменьшается life за кадр
+    pub ch: char,
+    pub phase: f64,
+}
+
+impl Particle {
+    /// Спавн частицы-искры. Вылетает из правой части экрана (от визуализатора) и летит влево.
+    pub fn spawn(energy: f64) -> Self {
+        let r = || {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static STATE: AtomicU64 = AtomicU64::new(0x9E3779B97F4A7C15);
+            let x = STATE.fetch_add(0x9E3779B97F4A7C15, Ordering::Relaxed);
+            let x = x.wrapping_mul(0x9E3779B97F4A7C15) ^ (x >> 32);
+            (x >> 11) as f64 / (1u64 << 53) as f64
+        };
+
+        // Мелкие точки, как в Брайле
+        let chars = ['·', '∙', '⋅', '•', '°', '○', '｡'];
+        let ch = chars[(r() * chars.len() as f64) as usize % chars.len()];
+
+        // Стартуем из правой части экрана (где обычно визуализатор)
+        let x = 1.0 + r() * 0.1; 
+        let y = r();
+
+        // Летят влево
+        let vx = -(0.002 + energy * 0.008);
+        let vy = (r() - 0.5) * 0.003;
+
+        Self {
+            x, y, vx, vy,
+            life: 1.0,
+            decay: 0.002 + r() * 0.003, 
+            ch,
+            phase: r() * std::f64::consts::PI * 2.0,
+        }
+    }
+}
+
 /// Режим повтора трека:
 /// - None: по окончании трека ничего не включается (если плейлист кончился)
 /// - All: по окончании трека зацикливаем весь список
@@ -82,24 +128,50 @@ pub struct App {
     pub rename_input: String,
     pub file_to_rename: Option<PathBuf>,
     pub confirm_delete: Option<PathBuf>,
+
+    //Ambient эффект
+    pub ambient_effect: bool,
+    pub ambient_particles: Vec<Particle>,
 }
 
 impl App {
-    pub fn new() -> Self {
+    pub fn new(initial_files: Vec<PathBuf>) -> Self {
         let config = AppConfig::load();
+        let ambient_effect = config.ambient_effect;
         let mpv = Mpv::new().ok();
-        let current_dir = PathBuf::from(&config.download_dir);
+
+        // - передан файл - переходим в его папку и сразу запускаем
+        // - передана папка - переходим в неё
+        // - ничего не передано - используем папку из конфига
+        let mut current_dir = PathBuf::from(&config.download_dir);
+        let mut initial_play: Option<PathBuf> = None;
+        let mut start_focus = Focus::Results;
+
+        if let Some(first) = initial_files.first() {
+            start_focus = Focus::Local;
+            if first.is_dir() {
+                current_dir = first.clone();
+            } else if first.is_file() {
+                if let Some(parent) = first.parent() {
+                    current_dir = parent.to_path_buf();
+                }
+                initial_play = Some(first.clone());
+            }
+        }
+
         fs::create_dir_all(&current_dir).unwrap_or_default();
 
-        // Канал для получения спектра частот от cava. Работает в отдельном потоке.
+        // Канал для получения спектра частот от cava.
         let audio_data = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let audio_clone = std::sync::Arc::clone(&audio_data);
         std::thread::spawn(move || {
             let conf = "[general]\nbars = 32\n[output]\nmethod = raw\nraw_target = /dev/stdout\ndata_format = binary\nbar_delimiter = 0\n";
             std::fs::write("/tmp/cava_fishpot.conf", conf).unwrap_or_default();
+            
             if let Ok(mut child) = Command::new("cava")
-                .arg("-p").arg("/tmp/cava_yt.conf")
+                .arg("-p").arg("/tmp/cava_fishpot.conf")
                 .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
                 .spawn() 
             {
                 let mut out = child.stdout.take().unwrap();
@@ -110,7 +182,9 @@ impl App {
                         let mut d = audio_clone.lock().unwrap(); 
                         d.clear(); 
                         d.extend_from_slice(&buf); 
-                    } else { break; }
+                    } else { 
+                        break; 
+                    }
                 }
             }
         });
@@ -123,10 +197,14 @@ impl App {
             .unwrap_or_default();
 
         let mut app = Self {
-            mode: Mode::Normal, focus: Focus::Results, input: String::new(),
+            mode: Mode::Normal, 
+            focus: start_focus,           // ← Results по умолчанию, Local если передан файл/папка
+            input: String::new(),
             results: Vec::new(), selected: 0,
-            local_items: Vec::new(), local_selected: 0, current_dir,
-            current: None, status: "Ready".into(), volume: 100, paused: false, show_help: false, time_pos: 0.0, duration: 0.0,
+            local_items: Vec::new(), local_selected: 0, 
+            current_dir,                  // ← уже вычисленная (файл / папка / дефолт)
+            current: None, status: "Ready".into(), volume: 100, paused: false, 
+            show_help: false, time_pos: 0.0, duration: 0.0,
             mpv, search_rx: None, import_rx: None, download_rx: None,
             tick: 0, shuffle: false,
             viz_time: 0.0, viz_mode: config.viz_mode, audio_data,
@@ -143,14 +221,40 @@ impl App {
             rename_input: String::new(),
             file_to_rename: None,
             confirm_delete: None,
+            ambient_effect,
+            ambient_particles: Vec::new(),
         };
         app.refresh_local();
+
+        // Если передан файл — выделяем его в списке и запускаем
+        if let Some(path) = initial_play {
+            let title = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
+            let track = Track {
+                id: title.clone(),
+                title,
+                duration: Some(0.0),
+                local_path: Some(path.to_string_lossy().to_string()),
+            };
+
+            // Ставим курсор на этот файл в левом списке
+            for (i, item) in app.local_items.iter().enumerate() {
+                if let LocalItem::File(t) = item {
+                    if t.local_path.as_deref() == path.to_str() {
+                        app.local_selected = i;
+                        break;
+                    }
+                }
+            }
+
+            let _ = app.play_track(track);
+        }
+
         if let Some(mpv) = &app.mpv { let _ = mpv.set_volume(app.volume); }
         app
     }
 
     /// Перечитывает текущую директорию с учётом фильтра `local_filter`.
-    /// Сначала идут папки (по алфавиту), потом файлы (по алфавиту).
+    /// В этой шляпе идут папки а потом уже файлы
     pub fn refresh_local(&mut self) {
         self.local_items.clear();
         if let Ok(entries) = fs::read_dir(&self.current_dir) {
@@ -163,7 +267,7 @@ impl App {
                 if path.is_dir() { 
                     dirs.push(LocalItem::Dir(path)); 
                 } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                    if ["mp3", "webm", "m4a", "flac", "wav"].contains(&ext) {
+                    if ["mp3", "webm", "m4a", "flac", "wav", "ogg", "opus", "aac", "wma", "alac", "aiff", "m4b"].contains(&ext) {
                         let title = path.file_stem().unwrap_or_default().to_string_lossy().to_string();
                         if filter_lower.is_empty() || title.to_lowercase().contains(&filter_lower) {
                             files.push(LocalItem::File(Track { 
@@ -292,6 +396,9 @@ impl App {
             }
             
             if !self.paused && self.current.is_some() { self.viz_time += 0.05; }
+            if self.ambient_effect && !self.fullscreen_viz {
+                self.update_ambient();
+            }
 
             // Обработка поиска.
             if let Some(rx) = &self.search_rx {
@@ -608,6 +715,12 @@ impl App {
                 self.viz_mode = (self.viz_mode + 1) % 8; 
                 self.status = format!("Визуализация: {}", self.viz_mode); 
             }
+
+            KeyCode::Char('A') => {
+                self.ambient_effect = !self.ambient_effect;
+                self.status = format!("Ambient: {}", if self.ambient_effect { "Вкл" } else { "Выкл" });
+            }
+
             KeyCode::Tab => self.focus = self.focus.next(),
             KeyCode::Char('p') | KeyCode::Char(' ') => { 
                 if let Some(mpv) = &self.mpv { let _ = mpv.set_pause(!self.paused); } 
@@ -765,6 +878,47 @@ impl App {
         }
         Ok(())
     }
+    
+    /// Обновляет физику частиц и спавнит новые по басу/энергии.
+    fn update_ambient(&mut self) {
+        let (bass, energy) = {
+            let data = self.audio_data.lock().unwrap();
+            if data.len() == 32 {
+                let b = data[0..8].iter().map(|&x| x as f64 / 255.0).sum::<f64>() / 8.0;
+                let e = data.iter().map(|&x| x as f64 / 255.0).sum::<f64>() / 32.0;
+                (b, e)
+            } else {
+                let t = self.viz_time;
+                ((t * 5.0).sin() * 0.3 + 0.4, 0.5)
+            }
+        };
+
+        let spawn = (1.0 + bass * 8.0 + energy * 4.0) as usize;
+        for _ in 0..spawn {
+            self.ambient_particles.push(Particle::spawn(bass));
+        }
+
+        for p in &mut self.ambient_particles {
+            p.x += p.vx;
+            p.y += p.vy;
+            p.phase += 0.02; 
+            
+            // Легкое покачивание (волна)
+            p.vy += (p.phase).sin() * 0.0001;
+
+            p.life -= p.decay;
+
+            // Если улетела за левый край или умерла — она удалится
+        }
+
+        self.ambient_particles.retain(|p| p.life > 0.0 && p.x > -0.1);
+
+        let cap = self.config.theme.ambient_count.max(50);
+        if self.ambient_particles.len() > cap {
+            self.ambient_particles.drain(0..self.ambient_particles.len() - cap);
+        }
+    }
+
 }
 
 /// Парсит время из строки. Поддерживает форматы `mm:ss` и просто секунды.

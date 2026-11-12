@@ -12,13 +12,23 @@ pub struct Theme {
     pub text_color: String,
     pub accent_color: String,
     pub selected_bg: String,
+    // NEW — прозрачность и ambient
+    #[serde(default)]
+    pub transparent_panels: bool,      // Local/Results без фона — просвечивает терминал
+    #[serde(default)]
+    pub transparent_visualizer: bool,  // визуализатор без фона
+    #[serde(default = "default_ambient_count")]
+    pub ambient_count: usize,          // сколько частиц ambient-эффекта
 }
+
+fn default_ambient_count() -> usize { 200 }
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct AppConfig {
     pub download_dir: String,
     pub viz_mode: usize,
     pub theme: Theme,
+    pub ambient_effect: bool,
 }
 
 impl Default for AppConfig {
@@ -30,6 +40,7 @@ impl Default for AppConfig {
         Self {
             download_dir,
             viz_mode: 0,
+            ambient_effect: false,
             theme: Theme {
                 bg_color: "#1a1b26".to_string(),
                 active_border: "#7aa2f7".to_string(),
@@ -37,6 +48,9 @@ impl Default for AppConfig {
                 text_color: "#c0caf5".to_string(),
                 accent_color: "#bb9af7".to_string(),
                 selected_bg: "#283250".to_string(),
+                transparent_panels: false,
+                transparent_visualizer: false,
+                ambient_count: 200,
             }
         }
     }
