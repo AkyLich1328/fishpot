@@ -58,15 +58,27 @@
 
 ## 📸 Скриншоты
 
-<img width="1361" height="708" alt="image" src="https://github.com/user-attachments/assets/50548f97-0be1-47ad-8ee2-5ddbaec279f8" />
+<img width="1359" height="740" alt="image" src="https://github.com/user-attachments/assets/d487c950-15be-4cbf-b5fa-06cf40d5c733" />
 
-<img width="1046" height="587" alt="image" src="https://github.com/user-attachments/assets/be7d9f5e-53c8-4968-8e34-42c7e77be91b" />
+<img width="1360" height="737" alt="image" src="https://github.com/user-attachments/assets/68701554-3120-431c-b105-e4e201473808" />
 
-<img width="1351" height="693" alt="image" src="https://github.com/user-attachments/assets/007d15b7-9adb-431a-a8b8-e4f9d3acb574" />
+<img width="1354" height="731" alt="image" src="https://github.com/user-attachments/assets/1b00c435-2310-44e0-9b1c-d1fb8e274ed0" />
 
-<img width="1357" height="705" alt="image" src="https://github.com/user-attachments/assets/ddf7d6ae-86c1-43fc-b438-efe12c676fe1" />
+<img width="1358" height="734" alt="image" src="https://github.com/user-attachments/assets/1df08325-29bc-407c-bc19-46a8556bec1b" />
 
-<img width="1358" height="696" alt="image" src="https://github.com/user-attachments/assets/27fe4f02-d426-4862-aa5a-fde7cefc2e18" />
+<img width="1356" height="726" alt="image" src="https://github.com/user-attachments/assets/48c3dd2f-b185-4cea-9a9b-3134ae23ef1e" />
+
+<img width="1359" height="735" alt="image" src="https://github.com/user-attachments/assets/cc806c85-9c90-4cb6-bfc5-e5330a42f844" />
+
+<img width="1353" height="732" alt="image" src="https://github.com/user-attachments/assets/88b83cdd-8622-4513-8dd7-84cab4f89ce2" />
+
+<img width="1358" height="730" alt="image" src="https://github.com/user-attachments/assets/6ef8d0a7-ed87-4620-ab0e-a1b07dc6f398" />
+
+<img width="1358" height="732" alt="image" src="https://github.com/user-attachments/assets/8c3f24a7-2826-419a-a4c8-7201c710c38f" />
+
+<img width="1360" height="730" alt="image" src="https://github.com/user-attachments/assets/00233dd5-2a38-44cb-9210-488365ca75df" />
+
+
 
 ---
 
