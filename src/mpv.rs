@@ -33,7 +33,8 @@ impl Mpv {
         let log_file = std::fs::File::create("/tmp/fishpot.log")?;
         let log_err = log_file.try_clone()?;
 
-        let child = Command::new("mpv")
+        // ВАЖНО: делаем child мутабельным, чтобы при ошибке мы могли его убить.
+        let mut child = Command::new("mpv")
             .args([
                 "--no-video", "--force-window=no", "--idle=yes",
                 "--audio-device=auto",
@@ -47,15 +48,26 @@ impl Mpv {
             .stderr(Stdio::from(log_err))
             .spawn()?;
 
+        // Хелпер: убивает mpv и чистит сокет, возвращая исходную ошибку.
+        // Определяем внутри new(), чтобы он не захватывал окружение.
+        fn cleanup(child: &mut Child, socket_path: &PathBuf, e: io::Error) -> io::Error {
+            let _ = child.kill();
+            let _ = child.wait(); // обязательно wait, чтобы не остался зомби
+            let _ = std::fs::remove_file(socket_path);
+            e
+        }
+
+        // Ждём, пока mpv создаст сокет, но не бесконечно.
         let mut attempts = 0;
         let stream = loop {
             if let Ok(s) = UnixStream::connect(&socket_path) { break s; }
             attempts += 1;
             if attempts > 100 {
-                return Err(io::Error::new(
+                let e = io::Error::new(
                     io::ErrorKind::TimedOut,
                     "Не удалось подключиться к mpv IPC-сокету",
-                ));
+                );
+                return Err(cleanup(&mut child, &socket_path, e));
             }
             thread::sleep(Duration::from_millis(40));
         };
@@ -65,8 +77,12 @@ impl Mpv {
             time_pos: 0.0, duration: 0.0, paused: false, eof_reached: false,
         }));
 
-        // Отдельный поток для чтения событий от mpv. Он не блокирует UI.
-        let stream_clone = stream.lock().unwrap().try_clone()?;
+        // Клонируем сокет для фонового потока. При ошибке — убиваем mpv.
+        let stream_clone = match stream.lock().unwrap().try_clone() {
+            Ok(s) => s,
+            Err(e) => return Err(cleanup(&mut child, &socket_path, e)),
+        };
+
         let status_clone = Arc::clone(&status);
         thread::spawn(move || {
             let reader = BufReader::new(stream_clone);
